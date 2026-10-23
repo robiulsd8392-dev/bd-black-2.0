@@ -283,4 +283,3 @@ def service_worker():
 if __name__ == "__main__":
     print("BD BLACK 2.0 running at http://127.0.0.1:5000")
     app.run(host="127.0.0.1", port=5000, debug=False)
-PY
