@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from flask import Flask, request, session, redirect, url_for, send_from_directory, render_template_string, jsonify
 from werkzeug.utils import secure_filename
+from authlib.integrations.flask_client import OAuth
 
 BASE = Path(__file__).resolve().parent
 UPLOADS = BASE / "uploads"
@@ -13,6 +14,14 @@ UPLOADS.mkdir(exist_ok=True)
 OUTPUTS.mkdir(exist_ok=True)
 
 app = Flask(__name__)
+oauth = OAuth(app)
+oauth.register(
+    name="google",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
 app.secret_key = os.environ.get("BD_BLACK_SECRET", secrets.token_hex(32))
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
@@ -187,8 +196,25 @@ def home():
 
 @app.route("/login/google")
 def google_login():
-    return ("Google Login is not configured. The site owner must set up "
-            "Google OAuth credentials and a verified callback URL first.", 501)
+    if not os.environ.get("GOOGLE_CLIENT_ID") or not os.environ.get("GOOGLE_CLIENT_SECRET"):
+        return "Google Login setup is incomplete. Please configure the OAuth credentials.", 503
+    redirect_uri = url_for("google_callback", _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/callback")
+def google_callback():
+    try:
+        token = oauth.google.authorize_access_token()
+        user_info = token.get("userinfo") or oauth.google.userinfo()
+        session["user"] = {
+            "name": user_info.get("name", ""),
+            "email": user_info.get("email", ""),
+            "picture": user_info.get("picture", "")
+        }
+        return redirect(url_for("home"))
+    except Exception:
+        return "Google sign-in failed. Check OAuth settings and try again.", 400
 
 @app.route("/logout")
 def logout():
